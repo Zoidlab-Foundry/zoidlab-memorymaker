@@ -1,0 +1,51 @@
+# Local dev for ZoidLab MemoryMaker (Foundry Package 04).
+#   docker compose up --build
+# The prototype persists to SQLite (a Docker volume) with deterministic mock recall.
+# Postgres+pgvector and Redis are declared for the production path — enable with
+# the "full" profile once the backend is pointed at DATABASE_URL / a real vector backend.
+services:
+  backend:
+    build: ./backend
+    environment:
+      - BUILDER_SESSION_SECRET=${BUILDER_SESSION_SECRET:-change-me}
+      - ENABLE_MOCK_EMBEDDINGS=${ENABLE_MOCK_EMBEDDINGS:-true}
+      - MEMORYMAKER_ADMINS=${MEMORYMAKER_ADMINS:-}
+      - DATA_DIR=/data
+    volumes:
+      - memorymaker_data:/data
+    ports:
+      - "8500:8500"
+
+  frontend:
+    build: ./frontend
+    environment:
+      - MEMORYMAKER_API_URL=http://backend:8500
+      - BUILDER_SESSION_SECRET=${BUILDER_SESSION_SECRET:-change-me}
+      - NYQUEST_API=${NYQUEST_API:-https://api.nyquest.ai}
+      - SESSION_COOKIE_DOMAIN=${SESSION_COOKIE_DOMAIN:-.zoidlab.ai}
+    ports:
+      - "3500:3500"
+    depends_on:
+      - backend
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    profiles: ["full"]
+    environment:
+      - POSTGRES_USER=zoidlab
+      - POSTGRES_PASSWORD=zoidlab
+      - POSTGRES_DB=zoidlab_memorymaker
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["full"]
+    ports:
+      - "6379:6379"
+
+volumes:
+  memorymaker_data:
+  pg_data:
