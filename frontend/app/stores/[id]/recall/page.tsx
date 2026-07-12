@@ -41,7 +41,7 @@ export default function RecallLab() {
       <h1 className="mt-2 text-[22px] font-semibold">Recall Test Lab</h1>
       <StoreTabs storeId={id} />
       <p className="mt-4 text-[13px] text-dim">Enter a query and see exactly what the AI would remember — which memories are retrieved, why, and what's excluded.</p>
-      <p className="mt-2 inline-block rounded-md border border-warn/40 bg-warn/10 px-2.5 py-1 text-[11.5px] text-warn">MVP engine — recall ranks by deterministic keyword + recency scoring. Semantic / vector retrieval is not yet active; every mode uses the same scorer.</p>
+      <p className="mt-2 inline-block rounded-md border border-ok/40 bg-ok/10 px-2.5 py-1 text-[11.5px] text-ok">Real semantic recall — local <b>bge-small</b> embeddings + cosine similarity in <b>semantic</b> / <b>hybrid</b> modes (blended with recency + tags); <b>keyword</b> mode is pure lexical. Falls back to keyword if the model is unavailable.</p>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-[320px_1fr]">
         <div className="space-y-3">

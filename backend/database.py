@@ -98,6 +98,10 @@ def init():
             CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity_type, entity_id, created_at);
             """
         )
+        # migration: entry embedding vector (JSON float array) for real semantic recall
+        cols = [r["name"] for r in c.execute("PRAGMA table_info(memory_entries)").fetchall()]
+        if "embedding" not in cols:
+            c.execute("ALTER TABLE memory_entries ADD COLUMN embedding TEXT")
 
 
 def _visible(col="owner_user_id"):
@@ -330,7 +334,32 @@ def _entry_out(row):
     d = dict(row)
     d["tags"] = _pj(d.get("tags"), [])
     d["metadata"] = _pj(d.get("metadata"), {})
+    d.pop("embedding", None)  # never ship the raw vector to the client
     return d
+
+
+def set_entry_embedding(mid, vector):
+    with _conn() as c:
+        c.execute("UPDATE memory_entries SET embedding=?, embedding_status='real' WHERE id=?",
+                  (_j(vector) if vector is not None else None, mid))
+
+
+def entry_embeddings(sid):
+    """{entry_id: [floats]} for entries in a store that have a stored embedding."""
+    with _conn() as c:
+        rows = c.execute("SELECT id, embedding FROM memory_entries WHERE store_id=? AND embedding IS NOT NULL AND deleted_at IS NULL", (sid,)).fetchall()
+    out = {}
+    for r in rows:
+        v = _pj(r["embedding"], None)
+        if v:
+            out[r["id"]] = v
+    return out
+
+
+def entries_missing_embeddings(limit=5000):
+    with _conn() as c:
+        rows = c.execute("SELECT id, title, content FROM memory_entries WHERE embedding IS NULL AND deleted_at IS NULL LIMIT ?", (limit,)).fetchall()
+    return [(r["id"], f"{r['title'] or ''} {r['content'] or ''}".strip()) for r in rows]
 
 
 SENSITIVITY_RANK = {"low": 0, "medium": 1, "high": 2}
@@ -392,6 +421,15 @@ def create_entry(sid, data, owner, source="manual"):
                    data.get("memory_type") or store.get("memory_type"), _j(data.get("tags", [])),
                    _j(data.get("metadata") or {}), data.get("sensitivity") or "low", float(data.get("confidence") or 0.8),
                    "mock", max(1, len(content) // 4), data.get("expires_at"), now, now))
+    # real semantic embedding (fail-soft to keyword recall if unavailable)
+    try:
+        import embeddings
+        if embeddings.available():
+            vecs = embeddings.embed_texts([f"{data.get('title') or ''} {content}".strip()])
+            if vecs:
+                set_entry_embedding(mid, vecs[0])
+    except Exception:
+        pass
     audit("store", sid, "memory_added", owner, {"memory_id": mid})
     return get_entry(mid)
 

@@ -4,6 +4,7 @@ real embedding-based retrieval can replace `_score` without touching the API."""
 import re
 import time
 import datetime
+import embeddings
 
 _STOP = {"the", "a", "an", "is", "are", "do", "does", "did", "of", "to", "in", "on", "for",
          "and", "or", "this", "that", "what", "when", "who", "how", "why", "i", "you", "it", "my"}
@@ -45,13 +46,16 @@ def _score(query, entry, prefer_recent=True):
 
 
 def recall(store, entries, query, top_k=5, threshold=0.3, mode="hybrid",
-           include_expired=False, include_archived=False):
+           include_expired=False, include_archived=False, entry_vectors=None):
     """Returns {retrieved, excluded, assembled_context, recall_quality_score, latency_ms, suggestions}."""
     t0 = time.time()
     now = datetime.datetime.utcnow().isoformat() + "Z"
     gov = store.get("governance") or {}
     retrieval = store.get("retrieval_strategy") or "hybrid"
     prefer_recent = mode in ("hybrid", "recent") or (store.get("retention_policy") or {}).get("prefer_recent")
+    # real semantic scoring when embeddings exist and the mode wants them
+    use_sem = bool(entry_vectors) and mode in ("semantic", "hybrid", "policy-safe") and embeddings.available()
+    qvec = embeddings.embed_query(query) if use_sem else None
 
     scored, excluded = [], []
     for e in entries:
@@ -68,6 +72,14 @@ def recall(store, entries, query, top_k=5, threshold=0.3, mode="hybrid",
         score, matched, reason = _score(query, e, prefer_recent)
         if mode == "keyword" and not matched:
             continue
+        if qvec is not None and e["id"] in entry_vectors:
+            sem = embeddings.cosine(qvec, entry_vectors[e["id"]])
+            if mode == "semantic":
+                score = round(sem, 3)
+                reason = f"Semantic match · cosine {sem:.2f}" + (f"; keywords: {', '.join(matched[:5])}" if matched else "")
+            else:  # hybrid / policy-safe
+                score = round(min(0.99, 0.4 * score + 0.6 * sem), 3)
+                reason = f"Hybrid · cosine {sem:.2f}" + (f" + keywords {', '.join(matched[:4])}" if matched else "")
         scored.append({"entry": e, "score": score, "matched": matched, "reason": reason, "expired": expired})
 
     scored.sort(key=lambda x: x["score"], reverse=True)
@@ -99,4 +111,4 @@ def recall(store, entries, query, top_k=5, threshold=0.3, mode="hybrid",
     return {"query": query, "retrieved": retrieved, "excluded": excluded[:10],
             "assembled_context": assembled, "recall_quality_score": quality,
             "latency_ms": int((time.time() - t0) * 1000) + 12, "suggestions": suggestions,
-            "mode": mode, "strategy": retrieval}
+            "mode": mode, "strategy": retrieval, "engine": "semantic" if use_sem else "keyword"}

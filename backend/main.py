@@ -406,7 +406,8 @@ def run_recall(sid: str, body: RecallBody, request: Request):
     entries = db.list_entries(sid, include_archived=True, include_expired=True)
     res = recall_engine.recall(store, entries, body.query, top_k=body.top_k or 5, threshold=body.threshold or 0.3,
                                mode=body.retrieval_mode or "hybrid",
-                               include_expired=bool(body.include_expired), include_archived=bool(body.include_archived))
+                               include_expired=bool(body.include_expired), include_archived=bool(body.include_archived),
+                               entry_vectors=db.entry_embeddings(sid))
     for r in res["retrieved"]:
         db.touch_entry(r["id"])
         db.log_access(sid, r["id"], owner_of(request), "recall", body.query, r["reason"])
@@ -423,6 +424,26 @@ def run_recall(sid: str, body: RecallBody, request: Request):
 def recall_tests(sid: str, request: Request):
     owned_store_or_404(sid, request)
     return {"recall_tests": db.list_recall_tests(sid)}
+
+
+@app.post("/api/admin/backfill-embeddings")
+def backfill_embeddings(request: Request):
+    """Embed any memories that don't yet have a vector (e.g. seed data). Idempotent."""
+    require_owner(request)
+    import embeddings
+    if not embeddings.available():
+        return {"ok": False, "reason": "embeddings_unavailable"}
+    missing = db.entries_missing_embeddings(limit=5000)
+    done = 0
+    for i in range(0, len(missing), 64):
+        batch = missing[i:i + 64]
+        vecs = embeddings.embed_texts([t for _, t in batch])
+        if not vecs:
+            break
+        for (mid, _), v in zip(batch, vecs):
+            db.set_entry_embedding(mid, v)
+            done += 1
+    return {"ok": True, "embedded": done, "remaining": len(db.entries_missing_embeddings(limit=1))}
 
 
 # ---- rules --------------------------------------------------------------
