@@ -2,7 +2,12 @@
 the backend requires a signed-in user for writes. Owner = Nyquest user id.
 Spine: project → store → ingest → inspect → recall → rules → governance → export.
 """
+import re
+import socket
+import ipaddress
+from urllib.parse import urlparse, urljoin
 from contextlib import asynccontextmanager
+import httpx
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
@@ -377,6 +382,72 @@ async def ingest_file(sid: str, request: Request, file: UploadFile = File(...)):
     o = require_owner(request)
     content = await file.read()
     return _run_ingest(sid, o, lambda st, ru, owner: ingestion.ingest_file(st, ru, file.filename, content, owner))
+
+
+# --- website ingestion (SSRF-guarded fetch, redirects re-checked) --------
+def _host_is_public(host: str) -> bool:
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except Exception:
+        return False
+    for info in infos:
+        try:
+            addr = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
+                or addr.is_multicast or addr.is_unspecified):
+            return False
+    return bool(infos)
+
+
+def _guard_url(url: str):
+    p = urlparse(url)
+    if p.scheme not in ("http", "https"):
+        raise ValueError(f"blocked scheme '{p.scheme or 'none'}'")
+    if not p.hostname or not _host_is_public(p.hostname):
+        raise ValueError(f"blocked internal/non-public host '{p.hostname}'")
+
+
+def _html_to_text(html: str) -> str:
+    text = re.sub(r"(?is)<(script|style|nav|footer|header).*?>.*?</\1>", " ", html)
+    text = re.sub(r"(?s)<[^>]+>", " ", text)
+    text = re.sub(r"&nbsp;", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    return re.sub(r"\n\s*\n\s*\n+", "\n\n", text).strip()
+
+
+async def _fetch_page(url: str, max_hops: int = 4):
+    async with httpx.AsyncClient(timeout=30, follow_redirects=False,
+                                 headers={"User-Agent": "ZoidLab-MemoryMaker/1.0 (+https://memorymaker.zoidlab.ai)"}) as c:
+        for _ in range(max_hops):
+            _guard_url(url)
+            r = await c.get(url)
+            if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
+                url = urljoin(url, r.headers["location"])
+                continue
+            r.raise_for_status()
+            m = re.search(r"(?is)<title[^>]*>(.*?)</title>", r.text)
+            title = (re.sub(r"\s+", " ", m.group(1)).strip() if m else url)[:120]
+            return title or url, _html_to_text(r.text)
+    raise ValueError("too many redirects")
+
+
+class UrlIngest(BaseModel):
+    url: str
+
+
+@app.post("/api/stores/{sid}/ingest/url")
+async def ingest_url(sid: str, body: UrlIngest, request: Request):
+    o = require_owner(request)
+    owned_store_or_404(sid, request)
+    try:
+        title, text = await _fetch_page(body.url)
+    except Exception as e:
+        raise HTTPException(400, f"could not read that URL: {str(e)[:140]}")
+    if not (text or "").strip():
+        raise HTTPException(400, "no extractable text at that URL")
+    return _run_ingest(sid, o, lambda st, ru, owner: ingestion.ingest_url_text(st, ru, text, body.url, owner, title))
 
 
 @app.get("/api/stores/{sid}/ingestion-jobs")

@@ -8,8 +8,9 @@ import StoreTabs from "../../../../components/StoreTabs";
 export default function Ingest() {
   const { id } = useParams<{ id: string }>();
   const [storeName, setStoreName] = useState("");
-  const [tab, setTab] = useState<"text" | "json" | "file">("text");
+  const [tab, setTab] = useState<"text" | "json" | "file" | "url">("text");
   const [text, setText] = useState(""); const [title, setTitle] = useState(""); const [tags, setTags] = useState("");
+  const [url, setUrl] = useState("");
   const [jsonText, setJsonText] = useState('[\n  { "title": "Example", "content": "Customer prefers window seats.", "tags": ["preference"] }\n]');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -28,9 +29,10 @@ export default function Ingest() {
   const runText = () => go(() => api.ingestText(id, { text, title: title || undefined, tags: tags.split(",").map((t) => t.trim()).filter(Boolean) }));
   const runJson = () => go(() => api.ingestJson(id, JSON.parse(jsonText)));
   const runFile = (file: File) => go(() => api.ingestFile(id, file));
+  const runUrl = () => go(() => api.ingestUrl(id, { url: url.trim() }));
 
-  const SOURCES = [["text", "Manual / Text"], ["json", "Paste JSON"], ["file", "Upload TXT / MD / CSV"]] as const;
-  const PLACEHOLDERS = ["PDF (soon)", "Website URL (soon)", "API source (soon)", "Workflow output (soon)", "Agent conversation (soon)"];
+  const SOURCES = [["text", "Manual / Text"], ["json", "Paste JSON"], ["file", "Upload TXT / MD / CSV"], ["url", "Website / URL"]] as const;
+  const PLACEHOLDERS = ["PDF (soon)", "API source (soon)", "Workflow output (soon)", "Agent conversation (soon)"];
 
   return (
     <div className="py-8">
@@ -56,6 +58,13 @@ export default function Ingest() {
             <div className="space-y-2">
               <textarea value={jsonText} onChange={(e) => setJsonText(e.target.value)} rows={10} className={inp + " font-mono text-[12px]"} />
               <button onClick={runJson} disabled={busy} className="rounded-lg bg-vi px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? "Ingesting…" : "Ingest JSON"}</button>
+            </div>
+          )}
+          {tab === "url" && (
+            <div className="space-y-2">
+              <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/page" className={inp} />
+              <p className="text-[11px] text-faint">The page is fetched, stripped to text, split into paragraphs, and each becomes a memory (through the store's rules). Only public URLs are allowed.</p>
+              <button onClick={runUrl} disabled={busy || !url.trim()} className="rounded-lg bg-vi px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? "Fetching…" : "Ingest URL"}</button>
             </div>
           )}
           {tab === "file" && (

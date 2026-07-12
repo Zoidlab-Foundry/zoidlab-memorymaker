@@ -1,5 +1,6 @@
-"""Parse ingestion sources (text / json / csv / markdown) into memory entries,
-each passed through the rules engine (secret redaction, sensitivity, expiry)."""
+"""Parse ingestion sources (text / json / csv / markdown / website) into memory
+entries, each passed through the rules engine (secret redaction, sensitivity, expiry)."""
+import re
 import csv
 import io
 import json
@@ -30,6 +31,16 @@ def _add(store, rules, item, owner, source, source_name, logs):
 def ingest_text(store, rules, text, owner, title=None, tags=None, source="manual"):
     created = _add(store, rules, {"title": title, "content": text, "tags": tags or []}, owner, source, "text", logs := [])
     return {"created": created, "failed": 0 if created else 1, "logs": logs, "source_type": "text", "source_name": title or "text"}
+
+
+def ingest_url_text(store, rules, text, url, owner, title=None):
+    """A fetched web page's text -> one memory per paragraph (short nav fragments skipped)."""
+    paras = [p.strip() for p in re.split(r"\n\s*\n", text or "") if len(p.strip()) >= 40]
+    created, failed, logs = 0, 0, []
+    for para in paras[:200]:
+        c = _add(store, rules, {"content": para, "title": title, "source": "website"}, owner, "website", url, logs)
+        created += c; failed += (0 if c else 1)
+    return {"created": created, "failed": failed, "logs": logs, "source_type": "website", "source_name": url}
 
 
 def ingest_json(store, rules, payload, owner):

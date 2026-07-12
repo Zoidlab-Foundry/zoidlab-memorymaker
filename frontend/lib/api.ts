@@ -38,6 +38,7 @@ export const api = {
   deleteMemory: (mid: string) => req<{ ok: boolean }>(`/api/memories/${mid}`, { method: "DELETE" }),
 
   ingestText: (id: string, b: any) => req<any>(`/api/stores/${id}/ingest/text`, { method: "POST", body: JSON.stringify(b) }),
+  ingestUrl: (id: string, b: any) => req<any>(`/api/stores/${id}/ingest/url`, { method: "POST", body: JSON.stringify(b) }),
   ingestJson: (id: string, payload: any) => req<any>(`/api/stores/${id}/ingest/json`, { method: "POST", body: JSON.stringify(payload) }),
   ingestFile: async (id: string, file: File) => {
     const fd = new FormData(); fd.append("file", file);
