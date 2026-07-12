@@ -30,7 +30,8 @@ export default function Rules() {
       <Link href={`/stores/${id}`} className="text-[12px] text-faint hover:text-dim">← {storeName || "Store"}</Link>
       <div className="mt-2 flex items-center justify-between"><h1 className="text-[22px] font-semibold">Memory Rules</h1></div>
       <StoreTabs storeId={id} />
-      <p className="mt-4 text-[13px] text-dim">Define what gets remembered, forgotten, expired, redacted, or gated. Rules run on ingest and recall.</p>
+      <p className="mt-4 text-[13px] text-dim">Define what gets remembered, forgotten, expired, redacted, or gated.</p>
+      <p className="mt-2 inline-block rounded-md border border-warn/40 bg-warn/10 px-2.5 py-1 text-[11.5px] text-warn">MVP — <b>redaction</b> and <b>retention/expiry</b> rules are enforced on ingest today. Other rule types are saved as definitions and not yet executed.</p>
 
       <div className="mt-5 flex justify-end"><button onClick={() => setAdding(true)} className="rounded-lg bg-vi px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90">+ Add rule</button></div>
       <div className="mt-3 space-y-2">

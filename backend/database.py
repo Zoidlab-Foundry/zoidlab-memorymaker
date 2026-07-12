@@ -368,6 +368,14 @@ def get_entry(mid):
     return _entry_out(r) if r else None
 
 
+def get_entry_visible(mid, viewer=None):
+    """Entry lookup scoped to a store the viewer may see (own or shared). Closes IDOR."""
+    with _conn() as c:
+        r = c.execute(f"""SELECT e.* FROM memory_entries e JOIN memory_stores s ON s.id=e.store_id
+                          WHERE e.id=? AND {_visible('s.owner_user_id')}""", (mid, viewer)).fetchone()
+    return _entry_out(r) if r else None
+
+
 def create_entry(sid, data, owner, source="manual"):
     store = get_store_raw(sid)
     if not store:

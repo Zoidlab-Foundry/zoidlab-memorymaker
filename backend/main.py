@@ -15,7 +15,7 @@ import risk_scanner
 import ingestion
 import exporter
 import seed_memory
-from auth import owner_of, session
+from auth import owner_of, session, require_pro
 
 
 @asynccontextmanager
@@ -31,12 +31,20 @@ app = FastAPI(title="ZoidLab MemoryMaker API", lifespan=lifespan)
 
 
 def require_owner(request: Request):
-    o = owner_of(request)
-    if not o:
-        raise HTTPException(status_code=401, detail="sign_in_required")
+    """Every mutation requires a signed-in Nyquest Pro user (backend-enforced)."""
+    o = require_pro(request)
     s = session(request)
     db.upsert_user(o, s.get("email"), s.get("name"))
     return o
+
+
+def owned_store_or_404(sid: str, request: Request):
+    """Fetch a store the caller is allowed to see (own or shared) or 404. Closes IDOR
+    on the by-id read endpoints that previously queried without a visibility scope."""
+    s = db.get_store(sid, owner_of(request))
+    if not s:
+        raise HTTPException(404, "not_found")
+    return s
 
 
 def store_badges(store: dict) -> List[str]:
@@ -273,9 +281,7 @@ def list_memories(sid: str, request: Request, search: Optional[str] = None, sour
 @app.post("/api/stores/{sid}/memories")
 def create_memory(sid: str, body: EntryBody, request: Request):
     o = require_owner(request)
-    store = db.get_store_raw(sid)
-    if not store:
-        raise HTTPException(404, "not_found")
+    store = owned_store_or_404(sid, request)
     # run through the rules engine (redaction / sensitivity / expiry)
     verdict = rules_engine.evaluate_ingest(store, db.list_rules(sid), body.content, body.sensitivity)
     if not verdict["allow"]:
@@ -290,8 +296,8 @@ def create_memory(sid: str, body: EntryBody, request: Request):
 
 
 @app.get("/api/memories/{mid}")
-def get_memory(mid: str):
-    e = db.get_entry(mid)
+def get_memory(mid: str, request: Request):
+    e = db.get_entry_visible(mid, owner_of(request))
     if not e:
         raise HTTPException(404, "not_found")
     db.touch_entry(mid)
@@ -345,7 +351,7 @@ class TextIngest(BaseModel):
 
 
 def _run_ingest(sid, owner, fn, *args):
-    store = db.get_store_raw(sid)
+    store = db.get_store(sid, owner)  # visibility-scoped: no injecting into another tenant's store
     if not store:
         raise HTTPException(404, "not_found")
     res = fn(store, db.list_rules(sid), *args, owner)
@@ -374,7 +380,8 @@ async def ingest_file(sid: str, request: Request, file: UploadFile = File(...)):
 
 
 @app.get("/api/stores/{sid}/ingestion-jobs")
-def ingestion_jobs(sid: str):
+def ingestion_jobs(sid: str, request: Request):
+    owned_store_or_404(sid, request)
     return {"jobs": db.list_ingestion_jobs(sid)}
 
 
@@ -392,6 +399,7 @@ class RecallBody(BaseModel):
 
 @app.post("/api/stores/{sid}/recall")
 def run_recall(sid: str, body: RecallBody, request: Request):
+    require_owner(request)  # recall is a Pro feature and writes access logs
     store = db.get_store(sid, owner_of(request))
     if not store:
         raise HTTPException(404, "not_found")
@@ -412,7 +420,8 @@ def run_recall(sid: str, body: RecallBody, request: Request):
 
 
 @app.get("/api/stores/{sid}/recall-tests")
-def recall_tests(sid: str):
+def recall_tests(sid: str, request: Request):
+    owned_store_or_404(sid, request)
     return {"recall_tests": db.list_recall_tests(sid)}
 
 
@@ -428,7 +437,8 @@ class RuleBody(BaseModel):
 
 
 @app.get("/api/stores/{sid}/rules")
-def list_rules(sid: str):
+def list_rules(sid: str, request: Request):
+    owned_store_or_404(sid, request)
     return {"rules": db.list_rules(sid)}
 
 
@@ -511,12 +521,14 @@ def analytics(sid: str, request: Request):
 
 
 @app.get("/api/stores/{sid}/access-logs")
-def store_access_logs(sid: str):
+def store_access_logs(sid: str, request: Request):
+    owned_store_or_404(sid, request)
     return {"logs": db.access_logs(sid)}
 
 
 @app.get("/api/stores/{sid}/audit")
-def store_audit(sid: str):
+def store_audit(sid: str, request: Request):
+    owned_store_or_404(sid, request)
     return {"audit": db.audit_for(sid)}
 
 

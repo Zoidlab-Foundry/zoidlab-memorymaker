@@ -17,11 +17,16 @@ def evaluate_ingest(store: dict, rules: list, content: str, sensitivity_hint: st
 
     redaction_on = gov.get("redaction", True) or any(r["rule_type"] == "redaction" and r["enabled"] for r in rules)
     if scan["has_secret"]:
+        found = ", ".join(scan["secrets"] + scan["patterns"]) or "pattern"
         if redaction_on:
-            out_content = risk_scanner.redact(content)
-            reasons.append(f"Redacted detected secrets ({', '.join(scan['secrets'] + scan['patterns']) or 'pattern'}).")
-            # if the whole point was a secret and nothing survives, block
-            if out_content.strip() in ("", "[REDACTED]"):
+            out_content, clean = risk_scanner.redact_and_verify(content)
+            if out_content != content:
+                reasons.append(f"Redacted detected secrets ({found}).")
+            if not clean:
+                # A secret was detected but could not be fully masked — fail closed.
+                allow = False
+                reasons.append("Blocked: a detected secret could not be fully redacted; memory was not stored.")
+            elif out_content.strip() in ("", "[REDACTED]"):
                 allow = False
                 reasons.append("Blocked: content was entirely secret material.")
         else:
