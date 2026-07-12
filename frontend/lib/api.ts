@@ -63,6 +63,9 @@ export const api = {
   analytics: (id: string) => req<any>(`/api/stores/${id}/analytics`),
   accessLogs: (id: string) => req<{ logs: any[] }>(`/api/stores/${id}/access-logs`).then((d) => d.logs),
   audit: (id: string) => req<{ audit: any[] }>(`/api/stores/${id}/audit`).then((d) => d.audit),
+  storeDeployment: (id: string) => req<{ deployment: any }>(`/api/stores/${id}/deployment`).then((d) => d.deployment),
+  deployStore: (id: string, b: any = {}) => req<{ ok: boolean; deployment: any; path: string }>(`/api/stores/${id}/deploy`, { method: "POST", body: JSON.stringify(b) }),
+  undeployStore: (id: string) => req<{ ok: boolean }>(`/api/stores/${id}/deploy`, { method: "DELETE" }),
   exportJsonUrl: (id: string, entries = false) => `/api/stores/${id}/export/json${entries ? "?include_entries=true" : ""}`,
   exportYamlUrl: (id: string) => `/api/stores/${id}/export/yaml`,
 };

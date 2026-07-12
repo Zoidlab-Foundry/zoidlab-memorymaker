@@ -446,6 +446,72 @@ def backfill_embeddings(request: Request):
     return {"ok": True, "embedded": done, "remaining": len(db.entries_missing_embeddings(limit=1))}
 
 
+# ---- deploy: serve a store as a live recall API --------------------------
+class StoreDeployBody(BaseModel):
+    top_k: Optional[int] = 5
+    threshold: Optional[float] = 0.3
+    retrieval_mode: Optional[str] = "hybrid"
+
+
+@app.get("/api/stores/{sid}/deployment")
+def get_store_deployment(sid: str, request: Request):
+    owned_store_or_404(sid, request)
+    return {"deployment": db.get_store_deployment(sid)}
+
+
+@app.post("/api/stores/{sid}/deploy")
+def deploy_store_endpoint(sid: str, body: StoreDeployBody, request: Request):
+    o = require_owner(request)
+    owned_store_or_404(sid, request)
+    dep = db.deploy_store(sid, o, body.model_dump())
+    return {"ok": True, "deployment": dep, "path": f"/api/memory-endpoint/{dep['token']}/recall"}
+
+
+@app.delete("/api/stores/{sid}/deploy")
+def undeploy_store_endpoint(sid: str, request: Request):
+    require_owner(request)
+    owned_store_or_404(sid, request)
+    db.undeploy_store(sid)
+    return {"ok": True}
+
+
+# Public — the unguessable token IS the credential.
+@app.get("/api/memory-endpoint/{token}")
+def memory_endpoint_info(token: str):
+    dep = db.store_deployment_by_token(token)
+    if not dep:
+        raise HTTPException(404, "unknown_or_disabled_endpoint")
+    store = db.get_store_raw(dep["store_id"])
+    return {"ok": True, "store": store["name"] if store else None, "calls": dep["call_count"],
+            "usage": "POST {\"query\": \"...\"} to this path + /recall for relevant memories."}
+
+
+class MemoryRecallBody(BaseModel):
+    query: str
+    top_k: Optional[int] = None
+    threshold: Optional[float] = None
+
+
+@app.post("/api/memory-endpoint/{token}/recall")
+def memory_endpoint_recall(token: str, body: MemoryRecallBody):
+    dep = db.store_deployment_by_token(token)
+    if not dep:
+        raise HTTPException(404, "unknown_or_disabled_endpoint")
+    sid = dep["store_id"]
+    store = db.get_store_raw(sid)
+    if not store:
+        raise HTTPException(404, "store_not_found")
+    s = db._pj(dep.get("settings"), {}) or {}
+    entries = db.list_entries(sid, include_archived=False, include_expired=False)
+    res = recall_engine.recall(store, entries, body.query,
+                               top_k=body.top_k or s.get("top_k") or 5,
+                               threshold=body.threshold if body.threshold is not None else s.get("threshold", 0.3),
+                               mode=s.get("retrieval_mode", "hybrid"), entry_vectors=db.entry_embeddings(sid))
+    db.bump_store_deployment(token)
+    return {"query": body.query, "memories": res["retrieved"], "engine": res.get("engine"),
+            "recall_quality_score": res["recall_quality_score"]}
+
+
 # ---- rules --------------------------------------------------------------
 class RuleBody(BaseModel):
     name: str

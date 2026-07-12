@@ -96,6 +96,11 @@ def init():
                 id TEXT PRIMARY KEY, entity_type TEXT, entity_id TEXT, action TEXT, actor_user_id TEXT,
                 details TEXT, created_at TEXT );
             CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity_type, entity_id, created_at);
+            CREATE TABLE IF NOT EXISTS store_deployments (
+                id TEXT PRIMARY KEY, store_id TEXT UNIQUE, owner_user_id TEXT, token TEXT UNIQUE,
+                settings TEXT, enabled INTEGER DEFAULT 1, call_count INTEGER DEFAULT 0,
+                last_called_at TEXT, created_at TEXT, updated_at TEXT );
+            CREATE INDEX IF NOT EXISTS idx_sdeploy_token ON store_deployments(token);
             """
         )
         # migration: entry embedding vector (JSON float array) for real semantic recall
@@ -608,3 +613,50 @@ def store_analytics(sid):
         "most_accessed": sorted([{"id": e["id"], "title": e["title"], "last_accessed": e["last_accessed_at"]}
                                  for e in ent if e["last_accessed_at"]], key=lambda x: x["last_accessed"] or "", reverse=True)[:5],
     }
+
+
+# --- deployments (store served as a live recall API) -------------------
+def _sdeployment_out(r):
+    if not r:
+        return None
+    d = dict(r)
+    d["settings"] = _pj(d.get("settings"), {})
+    d["enabled"] = bool(d["enabled"])
+    return d
+
+
+def deploy_store(sid, owner, settings):
+    now = now_iso()
+    with _conn() as c:
+        ex = c.execute("SELECT id, token FROM store_deployments WHERE store_id=?", (sid,)).fetchone()
+        token = ex["token"] if ex else uuid.uuid4().hex
+        if ex:
+            c.execute("UPDATE store_deployments SET owner_user_id=?, settings=?, enabled=1, updated_at=? WHERE id=?",
+                      (owner, _j(settings), now, ex["id"]))
+        else:
+            c.execute("""INSERT INTO store_deployments (id,store_id,owner_user_id,token,settings,enabled,call_count,created_at,updated_at)
+                         VALUES (?,?,?,?,?,1,0,?,?)""", (new_id("dep"), sid, owner, token, _j(settings), now, now))
+    return get_store_deployment(sid)
+
+
+def get_store_deployment(sid):
+    with _conn() as c:
+        r = c.execute("SELECT * FROM store_deployments WHERE store_id=?", (sid,)).fetchone()
+    return _sdeployment_out(r)
+
+
+def store_deployment_by_token(token):
+    with _conn() as c:
+        r = c.execute("SELECT * FROM store_deployments WHERE token=? AND enabled=1", (token,)).fetchone()
+    return dict(r) if r else None
+
+
+def undeploy_store(sid):
+    with _conn() as c:
+        c.execute("UPDATE store_deployments SET enabled=0, updated_at=? WHERE store_id=?", (now_iso(), sid))
+    return True
+
+
+def bump_store_deployment(token):
+    with _conn() as c:
+        c.execute("UPDATE store_deployments SET call_count=call_count+1, last_called_at=? WHERE token=?", (now_iso(), token))
