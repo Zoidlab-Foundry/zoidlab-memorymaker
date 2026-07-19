@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 /* In-app guide: what MemoryMaker is and how to ship your first memory store.
    Auto-opens once per browser (localStorage) and lives behind the Guide nav button. */
@@ -63,7 +64,7 @@ export default function HelpGuide() {
       >
         Guide
       </button>
-      {open && (
+      {open && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={dismiss} role="dialog" aria-modal="true" aria-label="MemoryMaker guide">
           <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-line bg-panel p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-1 flex items-center gap-2">
@@ -91,7 +92,8 @@ export default function HelpGuide() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
