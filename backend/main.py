@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from typing import Optional, Any, List
 
-import database as db
+import db_pg as db
 import recall_engine
 import rules_engine
 import risk_scanner

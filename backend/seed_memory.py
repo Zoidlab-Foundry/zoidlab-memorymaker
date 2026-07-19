@@ -1,6 +1,6 @@
 """Seed 7 memory projects + 10 memory stores (owner NULL = visible to everyone),
 each with sample memories, rules, and a recall test. Idempotent."""
-import database as db
+import db_pg as db
 import recall_engine
 
 

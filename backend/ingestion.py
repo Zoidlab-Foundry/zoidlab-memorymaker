@@ -4,7 +4,7 @@ import re
 import csv
 import io
 import json
-import database as db
+import db_pg as db
 import rules_engine
 
 
