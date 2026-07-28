@@ -390,6 +390,12 @@ def _entry_out(row):
     return d
 
 
+def embed_text_for(data):
+    """The exact text an entry is embedded from. Shared by create_entry and by bulk
+    callers that batch their embeddings, so both produce identical vectors."""
+    return f"{data.get('title') or ''} {data.get('content', '')}".strip()
+
+
 def set_entry_embedding(mid, vector):
     with _tx(None) as cur:
         cur.execute("UPDATE memory_entries SET embedding=%s, embedding_status='real' WHERE id=%s",
@@ -463,7 +469,16 @@ def get_entry_visible(mid, viewer=None):
     return _entry_out(r) if r else None
 
 
-def create_entry(sid, data, owner, source="manual"):
+_AUTO_EMBED = object()  # sentinel: caller did not precompute an embedding
+
+
+def create_entry(sid, data, owner, source="manual", embedding=_AUTO_EMBED):
+    """Write one memory entry.
+
+    `embedding` may be a precomputed vector (or None for "no vector") so that bulk
+    callers can embed a whole ingest in ONE batched embed_texts call. When it is not
+    supplied at all, the embedding is computed here for that single entry, as before.
+    """
     store = get_store_raw(sid)
     if not store:
         return None
@@ -481,11 +496,14 @@ def create_entry(sid, data, owner, source="manual"):
                      "mock", max(1, len(content) // 4), data.get("expires_at"), now, now))
     # real semantic embedding (fail-soft to keyword recall if unavailable)
     try:
-        import embeddings
-        if embeddings.available():
-            vecs = embeddings.embed_texts([f"{data.get('title') or ''} {content}".strip()])
-            if vecs:
-                set_entry_embedding(mid, vecs[0])
+        if embedding is _AUTO_EMBED:
+            import embeddings
+            if embeddings.available():
+                vecs = embeddings.embed_texts([embed_text_for(data)])
+                if vecs:
+                    set_entry_embedding(mid, vecs[0])
+        elif embedding:
+            set_entry_embedding(mid, embedding)
     except Exception:
         pass
     audit("store", sid, "memory_added", owner, {"memory_id": mid})

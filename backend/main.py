@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse, PlainTextResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional, Any, List
 
@@ -378,14 +379,15 @@ def ingest_text(sid: str, body: TextIngest, request: Request):
 async def ingest_json(sid: str, request: Request):
     o = require_owner(request)
     payload = await request.json()
-    return _run_ingest(sid, o, lambda st, ru, owner: ingestion.ingest_json(st, ru, payload, owner))
+    # _run_ingest is synchronous (DB + embeddings): keep it off the event loop
+    return await run_in_threadpool(_run_ingest, sid, o, lambda st, ru, owner: ingestion.ingest_json(st, ru, payload, owner))
 
 
 @app.post("/api/stores/{sid}/ingest/file")
 async def ingest_file(sid: str, request: Request, file: UploadFile = File(...)):
     o = require_owner(request)
     content = await file.read()
-    return _run_ingest(sid, o, lambda st, ru, owner: ingestion.ingest_file(st, ru, file.filename, content, owner))
+    return await run_in_threadpool(_run_ingest, sid, o, lambda st, ru, owner: ingestion.ingest_file(st, ru, file.filename, content, owner))
 
 
 # --- website ingestion (SSRF-guarded fetch, redirects re-checked) --------
@@ -451,7 +453,7 @@ async def ingest_url(sid: str, body: UrlIngest, request: Request):
         raise HTTPException(400, f"could not read that URL: {str(e)[:140]}")
     if not (text or "").strip():
         raise HTTPException(400, "no extractable text at that URL")
-    return _run_ingest(sid, o, lambda st, ru, owner: ingestion.ingest_url_text(st, ru, text, body.url, owner, title))
+    return await run_in_threadpool(_run_ingest, sid, o, lambda st, ru, owner: ingestion.ingest_url_text(st, ru, text, body.url, owner, title))
 
 
 @app.get("/api/stores/{sid}/ingestion-jobs")
