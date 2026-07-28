@@ -1,20 +1,28 @@
 # Local dev for ZoidLab MemoryMaker (Foundry Package 04).
 #   docker compose up --build
-# The prototype persists to SQLite (a Docker volume) with deterministic mock recall.
-# Postgres+pgvector and Redis are declared for the production path — enable with
-# the "full" profile once the backend is pointed at DATABASE_URL / a real vector backend.
+# Self-contained: Postgres comes up first and ./initdb.sql creates the RLS roles
+# (foundry owns the schema, app_rls is the NOBYPASSRLS role every request runs as),
+# then the backend opens its psycopg pool against it at import. Point
+# DATABASE_URL / DATABASE_URL_ADMIN elsewhere to use the shared Foundry Postgres.
 services:
   backend:
     build: ./backend
     environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://app_rls:app_rls@postgres:5432/memorymaker}
+      - DATABASE_URL_ADMIN=${DATABASE_URL_ADMIN:-postgresql://foundry:foundry@postgres:5432/memorymaker}
       - BUILDER_SESSION_SECRET=${BUILDER_SESSION_SECRET:-change-me}
-      - ENABLE_MOCK_EMBEDDINGS=${ENABLE_MOCK_EMBEDDINGS:-true}
+      - NYQUEST_API_KEY=${NYQUEST_API_KEY:-}
+      - FOUNDRY_GATE_ENABLED=${FOUNDRY_GATE_ENABLED:-true}
+      - FOUNDRY_REQUIRED_PLAN=${FOUNDRY_REQUIRED_PLAN:-pro}
+      - MOCK_PRO_USER=${MOCK_PRO_USER:-false}
       - MEMORYMAKER_ADMINS=${MEMORYMAKER_ADMINS:-}
-      - DATA_DIR=/data
-    volumes:
-      - memorymaker_data:/data
+      - ENABLE_REAL_EMBEDDINGS=${ENABLE_REAL_EMBEDDINGS:-false}
+      - MM_EMBED_MODEL=${MM_EMBED_MODEL:-}
     ports:
       - "8500:8500"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build: ./frontend
@@ -28,24 +36,22 @@ services:
     depends_on:
       - backend
 
+  # Not published to the host: the backend reaches it over the compose network, so
+  # `docker compose up` never collides with a Postgres already running locally.
   postgres:
-    image: pgvector/pgvector:pg16
-    profiles: ["full"]
+    image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=zoidlab
-      - POSTGRES_PASSWORD=zoidlab
-      - POSTGRES_DB=zoidlab_memorymaker
+      - POSTGRES_USER=foundry
+      - POSTGRES_PASSWORD=foundry
+      - POSTGRES_DB=memorymaker
     volumes:
       - pg_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
-  redis:
-    image: redis:7-alpine
-    profiles: ["full"]
-    ports:
-      - "6379:6379"
+      - ./initdb.sql:/docker-entrypoint-initdb.d/10-foundry-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U foundry -d memorymaker"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
 volumes:
-  memorymaker_data:
   pg_data:
