@@ -58,7 +58,7 @@ export default function RecallLab() {
               <label className="flex items-center gap-2 text-[12px] text-dim"><input type="checkbox" checked={incExpired} onChange={(e) => setIncExpired(e.target.checked)} /> include expired</label>
               <label className="flex items-center gap-2 text-[12px] text-dim"><input type="checkbox" checked={incArchived} onChange={(e) => setIncArchived(e.target.checked)} /> include archived</label>
             </div>
-            <button onClick={run} disabled={busy || !q.trim()} className="mt-3 w-full rounded-lg bg-vi px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? "Retrieving…" : "Run recall"}</button>
+            <button data-assist="run-recall" onClick={run} disabled={busy || !q.trim()} className="mt-3 w-full rounded-lg bg-vi px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? "Retrieving…" : "Run recall"}</button>
           </div>
           {history.length > 0 && (
             <div className="rounded-xl border border-line bg-panel p-4">

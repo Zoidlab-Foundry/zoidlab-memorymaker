@@ -29,7 +29,7 @@ function Stores() {
     <div className="py-8">
       <div className="mb-6 flex items-end justify-between">
         <div><h1 className="text-[22px] font-semibold">Memory Stores</h1><p className="mt-1 text-[13px] text-dim">The memory library — configured, governed, inspectable.</p></div>
-        <Link href="/stores/new" className="rounded-lg bg-vi px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90">Create Store</Link>
+        <Link data-assist="new-store" href="/stores/new" className="rounded-lg bg-vi px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90">Create Store</Link>
       </div>
       <div className="mb-5 flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row">
