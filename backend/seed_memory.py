@@ -43,7 +43,7 @@ STORES = [
 
     ("Restaurant Knowledge Memory", "Restaurant Concierge Memory", "document", "postgres_pgvector", "low",
      "Menu facts, hours, and policies for the concierge.",
-     [_mem("Sunday hours", "Evo Italian opens at 4:00 PM on Sundays for dinner service.", "document", ["hours"], "low", "document"),
+     [_mem("Sunday hours", "Trattoria Esempio (fictional demo restaurant) opens at 4:00 PM on Sundays for dinner service.", "document", ["hours"], "low", "document"),
       _mem("Gluten-free pasta", "The house pappardelle can be made gluten-free on request.", "document", ["menu", "dietary"], "low", "document"),
       _mem("Private events", "Private event inquiries for parties over 12 should be routed to the manager.", "document", ["events", "policy"], "low", "document"),
       _mem("Corkage policy", "Corkage is $25 per bottle, waived for members.", "document", ["policy"], "low", "document"),
