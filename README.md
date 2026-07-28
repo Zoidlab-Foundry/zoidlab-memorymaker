@@ -36,9 +36,11 @@ and **when** should it forget it.
 Aligned to the ZoidLab platform standard (Builder / Marketplace / Prompter / Foundry):
 
 - **Frontend** — Next.js 15, React 19, TypeScript, TailwindCSS (dark)
-- **Backend** — FastAPI (Python), SQLite (Postgres+pgvector-portable — all access behind
-  `database.py`; JSONB stored as JSON text). Vector backend is a config-level abstraction
-  (`postgres_pgvector`, `chroma`, `qdrant`, `pinecone`, `weaviate`, `redis_vector`, `milvus`, `mock`).
+- **Backend** — FastAPI (Python), Postgres with per-tenant FORCE row-level security (all access
+  behind `db_pg.py`; every query runs as the non-superuser `app_rls` role keyed on
+  `app.current_owner`, so tenant isolation is enforced by the database, not by application
+  code). Vector backend is a config-level abstraction (`postgres_pgvector`, `chroma`, `qdrant`,
+  `pinecone`, `weaviate`, `redis_vector`, `milvus`, `mock`).
 - **Recall** — deterministic hybrid recall (keyword overlap + tag/source/type + recency + confidence
   + expiration/archive exclusion). Set `ENABLE_MOCK_EMBEDDINGS=false` to wire real vector search.
 - **Auth** — shared ZoidLab / Nyquest SSO cookie (`zb_session`), Pro-gated.
@@ -58,7 +60,8 @@ cd ../frontend
 npm install && npm run dev     # http://localhost:3500
 ```
 
-Or with Docker: `docker compose up --build` (frontend :3500, backend :8500, SQLite volume).
+Or with Docker: `docker compose up --build` (frontend :3500, backend :8500). The backend needs
+the shared `foundry-infra` Postgres — set `DATABASE_URL` / `DATABASE_URL_ADMIN`.
 
 ## API summary
 
