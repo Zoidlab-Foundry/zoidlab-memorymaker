@@ -21,7 +21,7 @@ import risk_scanner
 import ingestion
 import exporter
 import seed_memory
-from auth import owner_of, session, require_pro
+from auth import owner_of, session, require_pro, is_pro as auth_is_pro
 
 
 @asynccontextmanager
@@ -38,6 +38,29 @@ app = FastAPI(title="ZoidLab MemoryMaker API", lifespan=lifespan)
 from foundry_common import assistant
 from assistant_manifest import MANIFEST
 app.include_router(assistant.make_router(MANIFEST))
+
+
+# Default-deny gate. The Next middleware treats /api as public and next.config rewrites it
+# straight to this backend, so every route below is internet-reachable and this is the only
+# gate. Reads were owner-scoped but not Pro-gated, which left anonymous callers able to list
+# owner-less rows (the RLS policy admits NULL owners). Gate by default, name the exceptions.
+_PUBLIC_PATHS = ("/api/health", "/api/meta", "/api/assistant/health")
+_PUBLIC_PREFIXES = ("/api/memory-endpoint/",)   # token-authed by design, no session
+
+
+@app.middleware("http")
+async def _auth_gate(request: Request, call_next):
+    path = request.url.path
+    exempt = (request.method == "OPTIONS" or not path.startswith("/api")
+              or path in _PUBLIC_PATHS
+              or any(path.startswith(p) for p in _PUBLIC_PREFIXES))
+    if not exempt:
+        s = session(request)
+        if not s or not s.get("sub"):
+            return JSONResponse({"detail": "sign_in_required"}, status_code=401)
+        if not auth_is_pro(s):
+            return JSONResponse({"detail": "pro_required"}, status_code=403)
+    return await call_next(request)
 
 
 def require_owner(request: Request):
